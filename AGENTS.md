@@ -34,7 +34,7 @@ npm install <package_name>
 bash
 cd api
 uv sync
-uv run fastapi dev
+uv run python -m fastapi dev app/main.py
 
 
 Add dependencies:
@@ -47,7 +47,7 @@ Run tests:
 
 bash
 cd api
-uv run pytest
+uv run python -m pytest
 
 
 ## AI
