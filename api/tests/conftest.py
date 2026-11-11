@@ -23,6 +23,7 @@ class FakeProvider(Provider):
         chat_error: str | None = None,
         fail_after_tokens: int | None = None,
         default_model: str = "",
+        vision_models: set[str] | frozenset[str] = frozenset(),
     ) -> None:
         self.id = provider_id
         self.label = provider_id.title()
@@ -34,6 +35,7 @@ class FakeProvider(Provider):
         self._chat_error = chat_error
         self._fail_after = fail_after_tokens
         self._default = default_model
+        self._vision = set(vision_models)
         self.calls: list[tuple[str, list[ChatMessage]]] = []
 
     @property
@@ -47,7 +49,10 @@ class FakeProvider(Provider):
     async def list_models(self) -> list[ModelInfo]:
         if self._list_error:
             raise ProviderError(self._list_error)
-        return [ModelInfo(id=m, name=m, provider=self.id, local=self.local) for m in self._models]
+        return [
+            ModelInfo(id=m, name=m, provider=self.id, local=self.local, vision=m in self._vision)
+            for m in self._models
+        ]
 
     async def stream_chat(
         self, model: str, messages: list[ChatMessage], temperature: float | None = None
@@ -85,7 +90,7 @@ def make_client(settings: Settings) -> Iterator:
 
     def factory(*providers: Provider, **overrides) -> TestClient:
         cfg = settings.model_copy(update=overrides)
-        registry = ProviderRegistry(list(providers), cache_ttl=0)
+        registry = ProviderRegistry(list(providers), cache_ttl=0, vision_patterns=cfg.vision_models)
         client = TestClient(create_app(cfg, registry))
         client.__enter__()
         clients.append(client)

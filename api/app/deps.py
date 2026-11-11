@@ -1,9 +1,10 @@
 from typing import Annotated
 
+from fastapi import Depends, Request
+
 from .core.config import Settings
 from .providers.registry import ProviderRegistry
 from .services.chat import ChatService
-from fastapi import Depends, Request
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -23,7 +24,6 @@ def get_chat_service(registry: RegistryDep, settings: SettingsDep) -> ChatServic
         registry,
         settings.system_prompt,
         settings.allow_cloud_fallback,
-        settings.ollama_vision_model,
     )
 
 

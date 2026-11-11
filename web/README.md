@@ -46,6 +46,8 @@ hooks/
 lib/
   api.ts                fetch + server-sent-event parser
   types.ts              shared types (mirror the API schemas)
+  images.ts             photo checks, resize/re-encode, error wording
+  image-store.ts        IndexedDB photo storage + cleanup
   config.ts             app name + placeholder user (rebrand here)
 ```
 
@@ -56,6 +58,7 @@ new components into `components/ui`.
 
 ## Notes
 
-- Chat history is stored in the browser (localStorage). Swap `hooks/use-chat.ts`
-  persistence for your database when you add accounts.
+- Chat history is stored in the browser (localStorage) and photos in IndexedDB;
+  messages keep only photo metadata and ids. Swap `hooks/use-chat.ts` and
+  `lib/image-store.ts` for your database and object storage when you add accounts.
 - App name and the placeholder user (Rizwan) live in `lib/config.ts`; replace the user with real data once you add auth.

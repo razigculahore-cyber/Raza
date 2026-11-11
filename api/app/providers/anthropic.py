@@ -3,8 +3,11 @@
 from collections.abc import AsyncIterator
 
 from anthropic import APIError, AsyncAnthropic, AuthenticationError, RateLimitError
-from .base import Provider, ProviderError
+
+from ..images import to_base64
 from ..schemas import ChatMessage, ModelInfo
+from ..vision import cloud_vision
+from .base import Provider, ProviderError
 
 DEFAULT_MAX_TOKENS = 8192
 
@@ -40,7 +43,13 @@ class AnthropicProvider(Provider):
         except APIError as exc:
             raise ProviderError(f"{self.label}: could not list models ({exc})") from exc
         return [
-            ModelInfo(id=m.id, name=m.display_name or m.id, provider=self.id, local=False)
+            ModelInfo(
+                id=m.id,
+                name=m.display_name or m.id,
+                provider=self.id,
+                local=False,
+                vision=cloud_vision(self.id, m.id),
+            )
             for m in models
         ]
 
@@ -51,8 +60,11 @@ class AnthropicProvider(Provider):
         temperature: float | None = None,
     ) -> AsyncIterator[str]:
         client = self._require_client()
+        if any(img.size > ANTHROPIC_MAX_IMAGE_BYTES for m in messages for img in m.images):
+            # Raised before any text, so another model that can see images is tried.
+            raise ProviderError(f"{self.label}: photos must be under 5 MB")
         system = "\n\n".join(m.content for m in messages if m.role == "system")
-        turns = [{"role": m.role, "content": m.content} for m in messages if m.role != "system"]
+        turns = [to_anthropic_turn(m) for m in messages if m.role != "system"]
         kwargs: dict = {"model": model, "max_tokens": DEFAULT_MAX_TOKENS, "messages": turns}
         if system:
             kwargs["system"] = system
@@ -72,3 +84,23 @@ class AnthropicProvider(Provider):
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.close()
+
+
+# Anthropic's per-image limit (the web app keeps photos under it).
+ANTHROPIC_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def to_anthropic_turn(message: ChatMessage) -> dict:
+    """A user/assistant turn; with images, a list of content blocks (images first, then text)."""
+    if not message.images:
+        return {"role": message.role, "content": message.content}
+    blocks: list[dict] = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": img.media_type, "data": to_base64(img.raw)},
+        }
+        for img in message.images
+    ]
+    if message.content.strip():  # Anthropic rejects empty text blocks
+        blocks.append({"type": "text", "text": message.content})
+    return {"role": message.role, "content": blocks}

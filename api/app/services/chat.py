@@ -36,18 +36,29 @@ NO_MODELS_MESSAGE = (
 )
 
 
+NO_VISION_MESSAGE = (
+    "No model that can see images is available. Install one with `ollama pull gemma3` "
+    "(or `ollama pull llava`), or add a cloud API key, then try again."
+)
+
+
+def text_only_message(model: str) -> str:
+    return (
+        f'{model} can\'t see images. Pick a model marked "Sees images", '
+        "or remove the photos from this chat."
+    )
+
+
 class ChatService:
     def __init__(
         self,
         registry: ProviderRegistry,
         system_prompt: str,
         allow_fallback: bool,
-        vision_model: str = "llama3.2-vision",
     ):
         self._registry = registry
         self._system_prompt = system_prompt
         self._allow_fallback = allow_fallback
-        self._vision_model = vision_model
 
     def _with_system(self, messages: list[ChatMessage]) -> list[ChatMessage]:
         if not self._system_prompt or any(m.role == "system" for m in messages):
@@ -55,20 +66,27 @@ class ChatService:
         return [ChatMessage(role="system", content=self._system_prompt), *messages]
 
     async def stream(self, request: ChatRequest) -> AsyncIterator[ChatEvent]:
-        has_images = any(message.images for message in request.messages)
+        # Any photo in the conversation needs a model that can read it.
+        vision = any(m.images for m in request.messages)
+        if vision and request.provider:
+            provider = self._registry.get(request.provider)
+            chosen = request.model or (provider.default_model if provider else "")
+            if chosen:
+                can_see, name = await self._registry.vision_check(request.provider, chosen)
+                if not can_see:
+                    yield ChatEvent("error", {"message": text_only_message(name)})
+                    return
         try:
-            if has_images:
-                candidates = await self._registry.candidates("ollama", self._vision_model, False)
-            else:
-                candidates = await self._registry.candidates(
-                    request.provider, request.model, self._allow_fallback
-                )
+            candidates = await self._registry.candidates(
+                request.provider, request.model, self._allow_fallback, vision=vision
+            )
         except ProviderError as exc:
             yield ChatEvent("error", {"message": str(exc)})
             return
 
         if not candidates:
-            yield ChatEvent("error", {"message": NO_MODELS_MESSAGE})
+            message = NO_VISION_MESSAGE if vision else NO_MODELS_MESSAGE
+            yield ChatEvent("error", {"message": message})
             return
 
         messages = self._with_system(request.messages)

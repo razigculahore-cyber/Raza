@@ -1,5 +1,6 @@
 """Unit tests for the real provider adapters, with the SDK clients mocked."""
 
+import base64
 from types import SimpleNamespace
 
 import pytest
@@ -77,7 +78,11 @@ async def test_ollama_streams_deltas():
     assert out == ["Hel", "lo"]
 
 
-async def test_ollama_includes_images_without_data_url_prefix():
+async def test_ollama_sends_images_as_raw_bytes():
+    # A 1x1 PNG. Ollama's SDK treats a *string* image as a file path, so bytes are required.
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    )
     provider = OllamaProvider("http://localhost:11434")
     captured = {}
 
@@ -90,12 +95,16 @@ async def test_ollama_includes_images_without_data_url_prefix():
         return gen()
 
     provider._client.chat = fake_chat
-    message = ChatMessage(role="user", content="Describe this image", images=["aGVsbG8="])
-    out = [t async for t in provider.stream_chat("llama3.2-vision", [message])]
+    message = ChatMessage(
+        role="user",
+        content="Describe this image",
+        images=[{"media_type": "image/png", "data": base64.b64encode(png).decode()}],
+    )
+    out = [t async for t in provider.stream_chat("gemma3", [message])]
 
     assert out == ["A photo"]
     assert captured["messages"] == [
-        {"role": "user", "content": "Describe this image", "images": ["aGVsbG8="]}
+        {"role": "user", "content": "Describe this image", "images": [png]}
     ]
 
 

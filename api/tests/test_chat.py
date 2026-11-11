@@ -54,28 +54,6 @@ def test_uses_explicitly_selected_model(make_client):
     assert ollama.calls == []
 
 
-def test_images_use_configured_ollama_vision_model_without_cloud_fallback(make_client):
-    ollama = FakeProvider("ollama", local=True, models=["llama3.2-vision"])
-    cloud = FakeProvider("openai", models=["gpt-x"])
-    client = make_client(ollama, cloud, ollama_vision_model="llava:latest")
-
-    events = parse_sse(
-        client.post(
-            "/api/chat",
-            json={
-                "provider": "openai",
-                "model": "gpt-x",
-                "messages": [{"role": "user", "content": "What is this?", "images": ["aGVsbG8="]}],
-            },
-        ).text
-    )
-
-    assert events[0][1]["provider"] == "ollama"
-    assert events[0][1]["model"] == "llava:latest"
-    assert ollama.calls[0][1][-1].images == ["aGVsbG8="]
-    assert cloud.calls == []
-
-
 def test_falls_back_to_cloud_when_no_local_models(make_client):
     ollama = FakeProvider("ollama", local=True, list_error="Ollama is not reachable")
     cloud = FakeProvider("anthropic", models=["claude"], reply="Cloud answer")
